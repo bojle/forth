@@ -69,6 +69,8 @@ struct Word {
   std::function<void (Interpreter &)> func;
   std::vector<Word> definition;
 
+  // An empty word is quite meaningless 
+  Word() = delete;
   Word(std::string _name, WordType _word_type, std::function<void (Interpreter &)> _func, std::vector<Word> _def):
     name {_name}, word_type {_word_type}, func {_func}, definition {_def} {}
 };
