@@ -61,11 +61,15 @@ std::unordered_map<std::string_view, std::function<int (int, int)>> word_dict {
 void process_command(Interpreter &intrp, std::string_view s) {
   if (s == ".s") {
     intrp.data_stack.print(); 
+  } else if (s == "BYE" || s == "bye") {
+    std::exit(0);
   } else if (s == "+" || s == "-" || s == "*" || s == "/") {
     int v1 = intrp.data_stack.pop();
     int v2 = intrp.data_stack.pop();
     int res = word_dict[s](v1, v2);
     intrp.data_stack.push(res);
+  } else {
+    std::cout << "Unknown word " << s << '\n';
   }
 }
 
