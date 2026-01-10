@@ -6,6 +6,7 @@
 #include <stack>
 #include <charconv>
 #include <string>
+#include <print>
 
 constexpr bool is_space(char p) noexcept {
   auto ne = [p](auto q) { return p != q; };
@@ -39,6 +40,13 @@ public:
   void push(T val) {
     data.push_back(val);
   }
+  T top() {
+    if (data.size() == 0) {
+      throw std::runtime_error("Empty stack!");
+    }
+    T val = *(data.end() - 1);
+    return val;
+  }
   void print() {
     for (const auto &i : data) {
       std::cout << i << ' ';
@@ -61,6 +69,7 @@ struct Interpreter {
   State state;
   Stack<int> data_stack;
   Interpreter(): state {STATE_INTRP} {}
+  std::string_view args;
 };
 
 struct Word {
@@ -97,6 +106,10 @@ void primitive_div(Interpreter &intrp) {
   auto vals = pop_2(intrp);
   intrp.data_stack.push(vals.first / vals.second);
 }
+void primitive_dup(Interpreter &intrp) {
+  auto val = intrp.data_stack.top();
+  intrp.data_stack.push(val);
+}
 
 std::unordered_map<std::string_view, Word> word_dict {
   {"+", Word("+", PRIMITIVE, primitive_add, std::vector<Word>{})},
@@ -104,11 +117,72 @@ std::unordered_map<std::string_view, Word> word_dict {
   {"-", Word("-", PRIMITIVE, primitive_sub, std::vector<Word>{})},
   {"/", Word("/", PRIMITIVE, primitive_div, std::vector<Word>{})},
   {"bye", Word("bye", PRIMITIVE, [](Interpreter &) { std::exit(0); }, std::vector<Word>{})},
+  {".s", Word(".s", PRIMITIVE, [](Interpreter &intrp) { intrp.data_stack.print(); }, std::vector<Word>{})},
+  {"dup", Word("dup", PRIMITIVE, primitive_dup, std::vector<Word>{})},
 };
 
-void process_command(Interpreter &intrp, std::string_view s) {
+auto process_command(Interpreter &intrp, auto ibegin, auto iend) {
+  if (intrp.state == STATE_COMPILE) {
+    std::vector<Word> def;
+    std::string name = std::ranges::to<std::string>(*ibegin);
+    ibegin++;
+    auto i = ibegin;
+    while (i != iend) {
+      std::string_view s = std::string_view(*i);
+      if (s == ";") {
+        intrp.state = STATE_INTRP;
+        i++;
+        break;
+      } else {
+        auto res = word_dict.find(s);
+        if (res != word_dict.end()) {
+          Word &word = res->second;
+          def.push_back(word);
+        } else {
+          std::cout << "Compilation failed: Word not found " << s << '\n';
+          return iend;
+        }
+      }
+      ++i;
+    }
+    Word word(name, COMPOSITE, nullptr, def);
+    word_dict.insert({name, word});
+    return i;
+  } else { 
+    std::string_view s = std::string_view(*ibegin); // consume a token
+    ibegin++; // move to the next
+    if (to_int(s)) {
+      int val = to_int(s).value();
+      intrp.data_stack.push(val);
+    } else {
+      if (s == ":") {
+        intrp.state = STATE_COMPILE;
+        return process_command(intrp, ibegin, iend);
+      } else {
+        auto res = word_dict.find(s);
+        if (res != word_dict.end()) {
+          Word &word = res->second;
+          if (word.word_type == PRIMITIVE) {
+            try {
+              word.func(intrp);
+            } catch (const std::runtime_error &e) {
+              std::cout << e.what() << '\n';
+            }
+          }
+        } else {
+          std::cout << "Interpret failed: Word not found " << s << '\n';
+        }
+      } 
+    }
+  }
+  return ibegin; 
+}
+#if 0
+void process_command(Interpreter &INTRP, std::string_view s, auto val) {
   if (s == ".s") {
     intrp.data_stack.print(); 
+  } else if (s == ":") {
+    std::print("found your colon!, this is the rest: {}\n", val);
   } else {
     auto res = word_dict.find(s);
     if (res != word_dict.end()) {
@@ -125,6 +199,7 @@ void process_command(Interpreter &intrp, std::string_view s) {
     }
   } 
 }
+#endif
 
 void repl() {
   Interpreter intrp;
@@ -132,14 +207,18 @@ void repl() {
   while (std::getline(std::cin, line)) {
     auto new_split =
         line | std::views::drop_while(is_space) | std::views::split(' ');
-    for (const auto &i : new_split) {
-      std::string_view line_v = std::string_view(i);
+    auto itr = new_split.begin();
+    while (itr != new_split.end()) {
+      itr = process_command(intrp, itr, new_split.end());
+#if 0
+      std::string_view line_v = std::string_view(*itr);
       if (to_int(line_v)) {
         int val = to_int(line_v).value();
         intrp.data_stack.push(val);
       } else {
-        process_command(intrp, line_v);
+        process_command(intrp, line_v, new_split);
       }
+#endif
     }
   }
 }
