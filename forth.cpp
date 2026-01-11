@@ -82,6 +82,14 @@ struct Word {
   Word() = delete;
   Word(std::string _name, WordType _word_type, std::function<void (Interpreter &)> _func, std::vector<Word> _def):
     name {_name}, word_type {_word_type}, func {_func}, definition {_def} {}
+
+  void print() {
+    std::print("{} {} ", name, word_type == PRIMITIVE ? "PRIMITIVE" : "COMPOSITE");
+    for (auto itr : definition) {
+      std::print("{} ", itr.name);
+    }
+    std::print("\n");
+  }
 };
 
 std::pair<int, int> pop_2(Interpreter &intrp) {
@@ -110,6 +118,7 @@ void primitive_dup(Interpreter &intrp) {
   auto val = intrp.data_stack.top();
   intrp.data_stack.push(val);
 }
+void primtive_word_dict(Interpreter &intrp);
 
 std::unordered_map<std::string_view, Word> word_dict {
   {"+", Word("+", PRIMITIVE, primitive_add, std::vector<Word>{})},
@@ -119,7 +128,14 @@ std::unordered_map<std::string_view, Word> word_dict {
   {"bye", Word("bye", PRIMITIVE, [](Interpreter &) { std::exit(0); }, std::vector<Word>{})},
   {".s", Word(".s", PRIMITIVE, [](Interpreter &intrp) { intrp.data_stack.print(); }, std::vector<Word>{})},
   {"dup", Word("dup", PRIMITIVE, primitive_dup, std::vector<Word>{})},
+  {".w", Word(".w", PRIMITIVE, primtive_word_dict, std::vector<Word>{})},
 };
+
+void primtive_word_dict(Interpreter &intrp) {
+  for (auto itr : word_dict) {
+    itr.second.print();
+  }
+}
 
 auto process_command(Interpreter &intrp, auto ibegin, auto iend) {
   if (intrp.state == STATE_COMPILE) {
@@ -168,8 +184,11 @@ auto process_command(Interpreter &intrp, auto ibegin, auto iend) {
             } catch (const std::runtime_error &e) {
               std::cout << e.what() << '\n';
             }
+          } else if (word.word_type == COMPOSITE) {
+            std::cout << "Found a composite word\n";
           }
         } else {
+          res->second.print();
           std::cout << "Interpret failed: Word not found " << s << '\n';
         }
       } 
@@ -177,29 +196,6 @@ auto process_command(Interpreter &intrp, auto ibegin, auto iend) {
   }
   return ibegin; 
 }
-#if 0
-void process_command(Interpreter &INTRP, std::string_view s, auto val) {
-  if (s == ".s") {
-    intrp.data_stack.print(); 
-  } else if (s == ":") {
-    std::print("found your colon!, this is the rest: {}\n", val);
-  } else {
-    auto res = word_dict.find(s);
-    if (res != word_dict.end()) {
-      Word &word = res->second;
-      if (word.word_type == PRIMITIVE) {
-        try {
-          word.func(intrp);
-        } catch (const std::runtime_error &e) {
-          std::cout << e.what() << '\n';
-        }
-      }
-    } else {
-      std::cout << "Word not found " << s << '\n';
-    }
-  } 
-}
-#endif
 
 void repl() {
   Interpreter intrp;
@@ -210,15 +206,6 @@ void repl() {
     auto itr = new_split.begin();
     while (itr != new_split.end()) {
       itr = process_command(intrp, itr, new_split.end());
-#if 0
-      std::string_view line_v = std::string_view(*itr);
-      if (to_int(line_v)) {
-        int val = to_int(line_v).value();
-        intrp.data_stack.push(val);
-      } else {
-        process_command(intrp, line_v, new_split);
-      }
-#endif
     }
   }
 }
