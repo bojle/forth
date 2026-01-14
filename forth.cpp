@@ -5,7 +5,6 @@
 #include <functional>
 #include <iostream>
 #include <ranges>
-#include <stack>
 #include <charconv>
 #include <string>
 #include <print>
@@ -135,7 +134,7 @@ void primitive_mul(Interpreter &intrp) {
 }
 void primitive_sub(Interpreter &intrp) {
   auto vals = pop_2(intrp);
-  intrp.data_stack.push(vals.first - vals.second);
+  intrp.data_stack.push(vals.second - vals.first);
 }
 void primitive_div(Interpreter &intrp) {
   auto vals = pop_2(intrp);
@@ -158,6 +157,19 @@ void primitive_over(Interpreter &intrp) {
   auto under = stack.at(stack.size() - 2);
   stack.push(under);
 }
+void primitive_rot(Interpreter &intrp) {
+  auto &stack = intrp.data_stack;
+  if (stack.size() < 3) {
+    throw std::runtime_error("Not enough elements in data stack to perform rot");
+  }
+  std::vector<int> res(3);
+  for (int i = 0; i < 3; ++i) {
+    res[i] = stack.pop();
+  }
+  stack.push(res[1]);
+  stack.push(res[0]);
+  stack.push(res[2]);
+}
 
 std::unordered_map<std::string, Word> word_dict {
   {"+", Word("+", PRIMITIVE, primitive_add, std::vector<Word>{})},
@@ -169,6 +181,7 @@ std::unordered_map<std::string, Word> word_dict {
   {"dup", Word("dup", PRIMITIVE, primitive_dup, std::vector<Word>{})},
   {"drop", Word("drop", PRIMITIVE, primitive_drop, std::vector<Word>{})},
   {"over", Word("over", PRIMITIVE, primitive_over, std::vector<Word>{})},
+  {"rot", Word("rot", PRIMITIVE, primitive_rot, std::vector<Word>{})},
   {".w", Word(".w", PRIMITIVE, primtive_word_dict, std::vector<Word>{})},
 };
 
