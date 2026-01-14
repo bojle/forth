@@ -170,7 +170,7 @@ void execute(Interpreter &intrp, Word &word) {
 Word &find(std::string &key) {
   auto res = word_dict.find(key);
   if (res == word_dict.end()) {
-    throw std::runtime_error("No elements left in the stack");
+    throw std::runtime_error("Could not find word");
   }
   return res->second;
 }
@@ -205,9 +205,19 @@ auto compile(Interpreter &intrp, auto ibegin, auto iend) {
   return i;
 }
 
+auto comment(Interpreter &intrp, auto ibegin, auto iend) {
+  while (ibegin != iend) {
+    if (std::string_view(*ibegin) == ")") {
+      ibegin++;
+      return ibegin;
+    }
+    ibegin++;
+  }
+  return ibegin;
+}
+
 auto interpret(Interpreter &intrp, auto ibegin, auto iend) {
   std::string_view s = std::string_view(*ibegin); // consume a token
-  std::cout << "Interpret: " << s << '\n';
   ibegin++;
   if (to_int(s)) {
     int val = to_int(s).value();
@@ -215,6 +225,8 @@ auto interpret(Interpreter &intrp, auto ibegin, auto iend) {
   } else if (s == ":") {
     intrp.state = STATE_COMPILE;
     return compile(intrp, ibegin, iend);
+  } else if (s == "(") {
+    return comment(intrp, ibegin, iend);
   } else {
     std::string key(s);
     try {
