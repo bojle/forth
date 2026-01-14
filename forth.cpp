@@ -175,58 +175,55 @@ Word &find(std::string &key) {
   return res->second;
 }
 
-auto process_command(Interpreter &intrp, auto ibegin, auto iend) {
-  if (intrp.state == STATE_COMPILE) {
-    std::vector<Word> def;
-    auto sub = *ibegin;
-    //std::string name = std::ranges::to<std::string>(*ibegin);
-    std::string name(sub.begin(), sub.end());
-    ibegin++;
-    auto i = ibegin;
-    while (i != iend) {
-      std::string_view s = std::string_view(*i);
-      if (s == ";") {
-        intrp.state = STATE_INTRP;
-        i++;
-        break;
-      } else {
-        std::string key(s);
-        auto res = word_dict.find(key);
-        if (res != word_dict.end()) {
-          Word &word = res->second;
-          def.push_back(word);
-        } else {
-          std::cout << "Compilation failed: Word not found " << s << '\n';
-          return iend;
-        }
-      }
-      ++i;
-    }
-    Word word(name, COMPOSITE, nullptr, def);
-    word_dict.insert({name, word});
-    return i;
-  } else { 
-    std::string_view s = std::string_view(*ibegin); // consume a token
-    std::cout << "Interpret: " << s << '\n';
-    ibegin++; // move to the next
-    if (to_int(s)) {
-      int val = to_int(s).value();
-      intrp.data_stack.push(val);
+auto compile(Interpreter &intrp, auto ibegin, auto iend) {
+  std::vector<Word> def;
+  auto sub = *ibegin;
+  std::string name(sub.begin(), sub.end());
+  ibegin++;
+  auto i = ibegin;
+  while (i != iend) {
+    std::string_view s = std::string_view(*i);
+    if (s == ";") {
+      intrp.state = STATE_INTRP;
+      i++;
+      break;
     } else {
-      if (s == ":") {
-        intrp.state = STATE_COMPILE;
-        return process_command(intrp, ibegin, iend);
+      std::string key(s);
+      auto res = word_dict.find(key);
+      if (res != word_dict.end()) {
+        Word &word = res->second;
+        def.push_back(word);
       } else {
-        std::string key(s);
-        try {
-          Word &word = find(key);
-          execute(intrp, word);
-        } catch (const std::runtime_error &e) {
-          std::print("{}", e.what());
-        }
-      } 
+        std::cout << "Compilation failed: Word not found " << s << '\n';
+        return iend;
+      }
     }
+    ++i;
   }
+  Word word(name, COMPOSITE, nullptr, def);
+  word_dict.insert({name, word});
+  return i;
+}
+
+auto interpret(Interpreter &intrp, auto ibegin, auto iend) {
+  std::string_view s = std::string_view(*ibegin); // consume a token
+  std::cout << "Interpret: " << s << '\n';
+  ibegin++;
+  if (to_int(s)) {
+    int val = to_int(s).value();
+    intrp.data_stack.push(val);
+  } else if (s == ":") {
+    intrp.state = STATE_COMPILE;
+    return compile(intrp, ibegin, iend);
+  } else {
+    std::string key(s);
+    try {
+      Word &word = find(key);
+      execute(intrp, word);
+    } catch (const std::runtime_error &e) {
+      std::print("{}", e.what());
+    }
+  } 
   return ibegin; 
 }
 
@@ -238,7 +235,7 @@ void repl(std::istream &in) {
         line | std::views::drop_while(is_space) | std::views::split(' ');
     auto itr = new_split.begin();
     while (itr != new_split.end()) {
-      itr = process_command(intrp, itr, new_split.end());
+      itr = interpret(intrp, itr, new_split.end());
     }
   }
 }
