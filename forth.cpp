@@ -50,6 +50,13 @@ public:
     data.pop_back();
     return val;
   }
+  size_t size() {
+    return data.size();
+  }
+  T at(int i) {
+    // Bounds check handled by vector::at() so I omit it
+    return data.at(i);
+  }
   void push(T val) {
     data.push_back(val);
   }
@@ -132,13 +139,25 @@ void primitive_sub(Interpreter &intrp) {
 }
 void primitive_div(Interpreter &intrp) {
   auto vals = pop_2(intrp);
-  intrp.data_stack.push(vals.first / vals.second);
+  intrp.data_stack.push(vals.second / vals.first);
 }
 void primitive_dup(Interpreter &intrp) {
   auto val = intrp.data_stack.top();
   intrp.data_stack.push(val);
 }
 void primtive_word_dict(Interpreter &intrp);
+
+void primitive_drop(Interpreter &intrp) {
+  (void)intrp.data_stack.pop();
+}
+void primitive_over(Interpreter &intrp) {
+  auto &stack = intrp.data_stack;
+  if (stack.size() < 2) {
+    throw std::runtime_error("Not enough elements in data stack to perform over");
+  }
+  auto under = stack.at(stack.size() - 2);
+  stack.push(under);
+}
 
 std::unordered_map<std::string, Word> word_dict {
   {"+", Word("+", PRIMITIVE, primitive_add, std::vector<Word>{})},
@@ -148,6 +167,8 @@ std::unordered_map<std::string, Word> word_dict {
   {"bye", Word("bye", PRIMITIVE, [](Interpreter &) { std::exit(0); }, std::vector<Word>{})},
   {".s", Word(".s", PRIMITIVE, [](Interpreter &intrp) { intrp.data_stack.print(); }, std::vector<Word>{})},
   {"dup", Word("dup", PRIMITIVE, primitive_dup, std::vector<Word>{})},
+  {"drop", Word("drop", PRIMITIVE, primitive_drop, std::vector<Word>{})},
+  {"over", Word("over", PRIMITIVE, primitive_over, std::vector<Word>{})},
   {".w", Word(".w", PRIMITIVE, primtive_word_dict, std::vector<Word>{})},
 };
 
