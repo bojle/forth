@@ -1,4 +1,6 @@
 #include <cctype>
+#include <errno.h>
+#include <fstream>
 #include <vector>
 #include <functional>
 #include <iostream>
@@ -7,10 +9,21 @@
 #include <charconv>
 #include <string>
 #include <print>
+#include <stdarg.h>
+
+#define LOG
 
 constexpr bool is_space(char p) noexcept {
   auto ne = [p](auto q) { return p != q; };
   return !!(" \t\n\v\r\f" | std::views::drop_while(ne));
+}
+
+template <typename... Args> 
+void log(std::format_string<Args...> fmt, Args... args) {
+#ifdef LOG
+  std::print("LOG: ");
+  std::print(fmt, args...);
+#endif
 }
 
 std::optional<int> to_int(const std::string_view &input) {
@@ -90,6 +103,13 @@ struct Word {
     }
     std::print("\n");
   }
+
+  auto begin() {
+    return name.begin();
+  }
+  auto end() {
+    return name.end();
+  }
 };
 
 std::pair<int, int> pop_2(Interpreter &intrp) {
@@ -120,7 +140,7 @@ void primitive_dup(Interpreter &intrp) {
 }
 void primtive_word_dict(Interpreter &intrp);
 
-std::unordered_map<std::string_view, Word> word_dict {
+std::unordered_map<std::string, Word> word_dict {
   {"+", Word("+", PRIMITIVE, primitive_add, std::vector<Word>{})},
   {"*", Word("*", PRIMITIVE, primitive_mul, std::vector<Word>{})},
   {"-", Word("-", PRIMITIVE, primitive_sub, std::vector<Word>{})},
@@ -137,10 +157,30 @@ void primtive_word_dict(Interpreter &intrp) {
   }
 }
 
+void execute(Interpreter &intrp, Word &word) {
+  if (word.word_type == PRIMITIVE) {
+    word.func(intrp);
+  } else if (word.word_type == COMPOSITE) {
+    for (Word &sub_word : word.definition) {
+      execute(intrp, sub_word);
+    }
+  }
+}
+
+Word &find(std::string &key) {
+  auto res = word_dict.find(key);
+  if (res == word_dict.end()) {
+    throw std::runtime_error("No elements left in the stack");
+  }
+  return res->second;
+}
+
 auto process_command(Interpreter &intrp, auto ibegin, auto iend) {
   if (intrp.state == STATE_COMPILE) {
     std::vector<Word> def;
-    std::string name = std::ranges::to<std::string>(*ibegin);
+    auto sub = *ibegin;
+    //std::string name = std::ranges::to<std::string>(*ibegin);
+    std::string name(sub.begin(), sub.end());
     ibegin++;
     auto i = ibegin;
     while (i != iend) {
@@ -150,7 +190,8 @@ auto process_command(Interpreter &intrp, auto ibegin, auto iend) {
         i++;
         break;
       } else {
-        auto res = word_dict.find(s);
+        std::string key(s);
+        auto res = word_dict.find(key);
         if (res != word_dict.end()) {
           Word &word = res->second;
           def.push_back(word);
@@ -166,6 +207,7 @@ auto process_command(Interpreter &intrp, auto ibegin, auto iend) {
     return i;
   } else { 
     std::string_view s = std::string_view(*ibegin); // consume a token
+    std::cout << "Interpret: " << s << '\n';
     ibegin++; // move to the next
     if (to_int(s)) {
       int val = to_int(s).value();
@@ -175,21 +217,12 @@ auto process_command(Interpreter &intrp, auto ibegin, auto iend) {
         intrp.state = STATE_COMPILE;
         return process_command(intrp, ibegin, iend);
       } else {
-        auto res = word_dict.find(s);
-        if (res != word_dict.end()) {
-          Word &word = res->second;
-          if (word.word_type == PRIMITIVE) {
-            try {
-              word.func(intrp);
-            } catch (const std::runtime_error &e) {
-              std::cout << e.what() << '\n';
-            }
-          } else if (word.word_type == COMPOSITE) {
-            std::cout << "Found a composite word\n";
-          }
-        } else {
-          res->second.print();
-          std::cout << "Interpret failed: Word not found " << s << '\n';
+        std::string key(s);
+        try {
+          Word &word = find(key);
+          execute(intrp, word);
+        } catch (const std::runtime_error &e) {
+          std::print("{}", e.what());
         }
       } 
     }
@@ -197,10 +230,10 @@ auto process_command(Interpreter &intrp, auto ibegin, auto iend) {
   return ibegin; 
 }
 
-void repl() {
+void repl(std::istream &in) {
   Interpreter intrp;
   std::string line;
-  while (std::getline(std::cin, line)) {
+  while (std::getline(in, line)) {
     auto new_split =
         line | std::views::drop_while(is_space) | std::views::split(' ');
     auto itr = new_split.begin();
@@ -210,4 +243,14 @@ void repl() {
   }
 }
 
-int main() { repl(); }
+int main(int argc, char *argv[]) { 
+  if (argc > 1) {
+    std::ifstream ifp(argv[1], std::ios::in);
+    if (errno != 0) {
+      std::print("ERROR: {}\n", strerror(errno));
+    }
+    repl(ifp);
+  } else {
+    repl(std::cin);
+  }
+}
