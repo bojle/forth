@@ -138,6 +138,9 @@ void primitive_sub(Interpreter &intrp) {
 }
 void primitive_div(Interpreter &intrp) {
   auto vals = pop_2(intrp);
+  if (vals.first == 0) {
+    return;
+  }
   intrp.data_stack.push(vals.second / vals.first);
 }
 void primitive_dup(Interpreter &intrp) {
@@ -157,6 +160,7 @@ void primitive_over(Interpreter &intrp) {
   auto under = stack.at(stack.size() - 2);
   stack.push(under);
 }
+
 void primitive_rot(Interpreter &intrp) {
   auto &stack = intrp.data_stack;
   if (stack.size() < 3) {
@@ -171,17 +175,42 @@ void primitive_rot(Interpreter &intrp) {
   stack.push(res[2]);
 }
 
+void primitive_swap(Interpreter &intrp) {
+  auto &stack = intrp.data_stack;
+  if (stack.size() < 2) {
+    throw std::runtime_error("Not enough elements in data stack to perform swap");
+  }
+  auto first_val = stack.pop();
+  auto second_val = stack.pop();
+  stack.push(first_val);
+  stack.push(second_val);
+}
+
+void primitive_abs(Interpreter &intrp) {
+  auto &stack = intrp.data_stack;
+  auto val = stack.pop();
+  stack.push(val < 0 ? -val : val);
+}
+
+void primitive_and(Interpreter &intrp) {
+  auto vals = pop_2(intrp);
+  intrp.data_stack.push(vals.first & vals.second);
+}
+
 std::unordered_map<std::string, Word> word_dict {
   {"+", Word("+", PRIMITIVE, primitive_add, std::vector<Word>{})},
   {"*", Word("*", PRIMITIVE, primitive_mul, std::vector<Word>{})},
   {"-", Word("-", PRIMITIVE, primitive_sub, std::vector<Word>{})},
   {"/", Word("/", PRIMITIVE, primitive_div, std::vector<Word>{})},
+  {"abs", Word("abs", PRIMITIVE, primitive_abs, std::vector<Word>{})},
+  {"and", Word("and", PRIMITIVE, primitive_and, std::vector<Word>{})},
   {"bye", Word("bye", PRIMITIVE, [](Interpreter &) { std::exit(0); }, std::vector<Word>{})},
   {".s", Word(".s", PRIMITIVE, [](Interpreter &intrp) { intrp.data_stack.print(); }, std::vector<Word>{})},
   {"dup", Word("dup", PRIMITIVE, primitive_dup, std::vector<Word>{})},
   {"drop", Word("drop", PRIMITIVE, primitive_drop, std::vector<Word>{})},
   {"over", Word("over", PRIMITIVE, primitive_over, std::vector<Word>{})},
   {"rot", Word("rot", PRIMITIVE, primitive_rot, std::vector<Word>{})},
+  {"swap", Word("rot", PRIMITIVE, primitive_swap, std::vector<Word>{})},
   {".w", Word(".w", PRIMITIVE, primtive_word_dict, std::vector<Word>{})},
 };
 
