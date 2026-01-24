@@ -1,5 +1,6 @@
 #include <cctype>
 #include <errno.h>
+#include <format>
 #include <fstream>
 #include <vector>
 #include <functional>
@@ -26,11 +27,15 @@ void log(std::format_string<Args...> fmt, Args... args) {
 }
 
 std::optional<int> to_int(const std::string_view &input) {
+  if (input.empty()) {
+    return std::nullopt;
+  }
   int out;
+  const auto end = input.data() + input.size();
   const std::from_chars_result result =
       std::from_chars(input.data(), input.data() + input.size(), out);
   if (result.ec == std::errc::invalid_argument ||
-      result.ec == std::errc::result_out_of_range) {
+      result.ec == std::errc::result_out_of_range || result.ptr != end) {
     return std::nullopt;
   }
   return out;
@@ -79,7 +84,13 @@ using State = enum {
   STATE_COMPILE
 };
 
+enum {
+  FORTH_TRUE = -1,
+  FORTH_FALSE = 0
+};
+
 using WordType = enum {
+  CONSTANT,
   PRIMITIVE,
   COMPOSITE,
 };
@@ -103,7 +114,15 @@ struct Word {
     name {_name}, word_type {_word_type}, func {_func}, definition {_def} {}
 
   void print() {
-    std::print("{} {} ", name, word_type == PRIMITIVE ? "PRIMITIVE" : "COMPOSITE");
+    std::string word_type_s;
+    if (word_type == PRIMITIVE) {
+      word_type_s = "PRIMITIVE";
+    } else if (word_type == COMPOSITE) {
+      word_type_s = "COMPOSITE";
+    } else {
+      word_type_s = "CONSTANT";
+    }
+    std::print("{} {} ", name, word_type_s);
     for (auto itr : definition) {
       std::print("{} ", itr.name);
     }
@@ -196,6 +215,33 @@ void primitive_and(Interpreter &intrp) {
   auto vals = pop_2(intrp);
   intrp.data_stack.push(vals.first & vals.second);
 }
+void primitive_or(Interpreter &intrp) {
+  auto vals = pop_2(intrp);
+  intrp.data_stack.push(vals.first | vals.second);
+}
+void primitive_mod(Interpreter &intrp) {
+  auto vals = pop_2(intrp);
+  if (vals.first == 0) {
+    return;
+  }
+  intrp.data_stack.push(vals.second % vals.first);
+}
+void primitive_nip(Interpreter &intrp) {
+  auto &stack = intrp.data_stack;
+  auto first = stack.pop();
+  auto second = stack.pop();
+  intrp.data_stack.push(first);
+}
+void primitive_equals(Interpreter &intrp) {
+  auto val = intrp.data_stack.pop();
+  auto val2 = intrp.data_stack.pop();
+  if (val == val2) {
+    intrp.data_stack.push(FORTH_TRUE);
+  } else {
+    intrp.data_stack.push(FORTH_FALSE);
+  }
+}
+
 
 std::unordered_map<std::string, Word> word_dict {
   {"+", Word("+", PRIMITIVE, primitive_add, std::vector<Word>{})},
@@ -204,6 +250,7 @@ std::unordered_map<std::string, Word> word_dict {
   {"/", Word("/", PRIMITIVE, primitive_div, std::vector<Word>{})},
   {"abs", Word("abs", PRIMITIVE, primitive_abs, std::vector<Word>{})},
   {"and", Word("and", PRIMITIVE, primitive_and, std::vector<Word>{})},
+  {"or", Word("or", PRIMITIVE, primitive_or, std::vector<Word>{})},
   {"bye", Word("bye", PRIMITIVE, [](Interpreter &) { std::exit(0); }, std::vector<Word>{})},
   {".s", Word(".s", PRIMITIVE, [](Interpreter &intrp) { intrp.data_stack.print(); }, std::vector<Word>{})},
   {"dup", Word("dup", PRIMITIVE, primitive_dup, std::vector<Word>{})},
@@ -211,6 +258,9 @@ std::unordered_map<std::string, Word> word_dict {
   {"over", Word("over", PRIMITIVE, primitive_over, std::vector<Word>{})},
   {"rot", Word("rot", PRIMITIVE, primitive_rot, std::vector<Word>{})},
   {"swap", Word("rot", PRIMITIVE, primitive_swap, std::vector<Word>{})},
+  {"mod", Word("mod", PRIMITIVE, primitive_mod, std::vector<Word>{})},
+  {"nip", Word("nip", PRIMITIVE, primitive_nip, std::vector<Word>{})},
+  {"=", Word("=", PRIMITIVE, primitive_equals, std::vector<Word>{})},
   {".w", Word(".w", PRIMITIVE, primtive_word_dict, std::vector<Word>{})},
 };
 
@@ -227,13 +277,16 @@ void execute(Interpreter &intrp, Word &word) {
     for (Word &sub_word : word.definition) {
       execute(intrp, sub_word);
     }
+  } else if (word.word_type == CONSTANT) {
+    intrp.data_stack.push(to_int(word.name).value());
   }
 }
 
 Word &find(std::string &key) {
   auto res = word_dict.find(key);
   if (res == word_dict.end()) {
-    throw std::runtime_error("Could not find word");
+    std::string ret = std::format("Could not find word {}", key);
+    throw std::runtime_error(ret);
   }
   return res->second;
 }
@@ -250,6 +303,9 @@ auto compile(Interpreter &intrp, auto ibegin, auto iend) {
       intrp.state = STATE_INTRP;
       i++;
       break;
+    } else if (to_int(s)) {
+      Word word(std::string(s), CONSTANT, [](Interpreter &) {}, std::vector<Word>{});
+      def.push_back(word);
     } else {
       std::string key(s);
       auto res = word_dict.find(key);
@@ -315,7 +371,16 @@ void repl(std::istream &in) {
   }
 }
 
+void load_stdlib(std::string filepath) {
+  std::ifstream ifp(filepath, std::ios::in);
+  if (errno != 0) {
+    std::print("ERROR: {}\n", strerror(errno));
+  }
+  repl(ifp);
+}
+
 int main(int argc, char *argv[]) { 
+  load_stdlib("std.f");
   if (argc > 1) {
     std::ifstream ifp(argv[1], std::ios::in);
     if (errno != 0) {
