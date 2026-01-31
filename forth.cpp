@@ -26,6 +26,11 @@ void log(std::format_string<Args...> fmt, Args... args) {
 #endif
 }
 
+// Forward declarations 
+struct Word;
+struct Interpreter;
+void execute(Interpreter &intrp, const Word &word);
+
 std::optional<int> to_int(const std::string_view &input) {
   if (input.empty()) {
     return std::nullopt;
@@ -219,6 +224,10 @@ void primitive_or(Interpreter &intrp) {
   auto vals = pop_2(intrp);
   intrp.data_stack.push(vals.first | vals.second);
 }
+void primitive_invert(Interpreter &intrp) {
+  auto vals = intrp.data_stack.pop();
+  intrp.data_stack.push(~vals);
+}
 void primitive_mod(Interpreter &intrp) {
   auto vals = pop_2(intrp);
   if (vals.first == 0) {
@@ -242,7 +251,6 @@ void primitive_equals(Interpreter &intrp) {
   }
 }
 
-
 std::unordered_map<std::string, Word> word_dict {
   {"+", Word("+", PRIMITIVE, primitive_add, std::vector<Word>{})},
   {"*", Word("*", PRIMITIVE, primitive_mul, std::vector<Word>{})},
@@ -251,6 +259,7 @@ std::unordered_map<std::string, Word> word_dict {
   {"abs", Word("abs", PRIMITIVE, primitive_abs, std::vector<Word>{})},
   {"and", Word("and", PRIMITIVE, primitive_and, std::vector<Word>{})},
   {"or", Word("or", PRIMITIVE, primitive_or, std::vector<Word>{})},
+  {"invert", Word("invert", PRIMITIVE, primitive_invert, std::vector<Word>{})},
   {"bye", Word("bye", PRIMITIVE, [](Interpreter &) { std::exit(0); }, std::vector<Word>{})},
   {".s", Word(".s", PRIMITIVE, [](Interpreter &intrp) { intrp.data_stack.print(); }, std::vector<Word>{})},
   {"dup", Word("dup", PRIMITIVE, primitive_dup, std::vector<Word>{})},
@@ -262,6 +271,8 @@ std::unordered_map<std::string, Word> word_dict {
   {"nip", Word("nip", PRIMITIVE, primitive_nip, std::vector<Word>{})},
   {"=", Word("=", PRIMITIVE, primitive_equals, std::vector<Word>{})},
   {".w", Word(".w", PRIMITIVE, primtive_word_dict, std::vector<Word>{})},
+  {"true", Word("-1", CONSTANT, [](Interpreter &){}, std::vector<Word>{})},
+  {"false", Word("0", CONSTANT, [](Interpreter &){}, std::vector<Word>{})},
 };
 
 void primtive_word_dict(Interpreter &intrp) {
@@ -270,11 +281,11 @@ void primtive_word_dict(Interpreter &intrp) {
   }
 }
 
-void execute(Interpreter &intrp, Word &word) {
+void execute(Interpreter &intrp, const Word &word) {
   if (word.word_type == PRIMITIVE) {
     word.func(intrp);
   } else if (word.word_type == COMPOSITE) {
-    for (Word &sub_word : word.definition) {
+    for (const Word &sub_word : word.definition) {
       execute(intrp, sub_word);
     }
   } else if (word.word_type == CONSTANT) {
@@ -291,6 +302,49 @@ Word &find(std::string &key) {
   return res->second;
 }
 
+auto compile_if(Interpreter &intrp, auto &ibegin, auto &iend) {
+  ibegin++;
+  std::vector<Word> if_part, else_part;
+  std::vector<Word> *current_part = &if_part;
+  while (ibegin != iend) {
+    std::string_view s {*ibegin};
+    std::string key(s);
+    if (key == "else") {
+      current_part = &else_part;
+    } else if (key == "then") {
+      break;
+    } else {
+      auto res = word_dict.find(key);
+      if (res != word_dict.end()) {
+        Word &word = res->second;
+        current_part->push_back(word);
+      } else if (to_int(key)) {
+        Word word(key, CONSTANT, [](Interpreter &){}, std::vector<Word>{});
+        current_part->push_back(word);
+      } else {
+        std::cout << "Compilation failed: Word not found " << key << '\n';
+      }
+    }
+    ibegin++;
+  }
+  Word if_word(std::string("if_word"), COMPOSITE, [](Interpreter &) {}, if_part);
+  Word else_word(std::string("else_word"), COMPOSITE, [](Interpreter &) {}, else_part);
+  auto primitive_if = [if_word, else_word](Interpreter &intrp) {
+    auto val = intrp.data_stack.pop();
+    if (val == FORTH_TRUE) {
+      for (auto &ww : if_word.definition) {
+        execute(intrp, ww);
+      }
+    } else {
+      for (auto &ww : else_word.definition) {
+        execute(intrp, ww);
+      }
+    }
+  };
+  Word word(std::string("if"), PRIMITIVE, primitive_if, std::vector<Word>{if_word, else_word});
+  return word;
+}
+
 auto compile(Interpreter &intrp, auto ibegin, auto iend) {
   std::vector<Word> def;
   auto sub = *ibegin;
@@ -303,6 +357,9 @@ auto compile(Interpreter &intrp, auto ibegin, auto iend) {
       intrp.state = STATE_INTRP;
       i++;
       break;
+    } else if (s == "if") {
+      Word word = compile_if(intrp, i, iend);
+      def.push_back(word);
     } else if (to_int(s)) {
       Word word(std::string(s), CONSTANT, [](Interpreter &) {}, std::vector<Word>{});
       def.push_back(word);
